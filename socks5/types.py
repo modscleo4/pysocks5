@@ -15,6 +15,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
+from socket import socket
 from struct import pack, unpack
 from typing import Self
 
@@ -355,3 +356,21 @@ class UDPRequest:
             return ':'.join([hex(octet) for octet in self.dst_addr])
 
         return ''
+
+
+def recv_or_none(sock: socket, size: int) -> bytes | None:
+    try:
+        return sock.recv(size)
+    except:
+        return None
+
+
+def pack_address(atyp: AddressType, address: str) -> bytes:
+    if atyp == AddressType.IPV4:
+        return pack(">BBBB", *map(int, address.split(".")))
+    elif atyp == AddressType.DOMAINNAME:
+        return pack(f">{len(address)}s", address.encode("utf-8"))
+    elif atyp == AddressType.IPV6:
+        return pack(">BBBBBBBBBBBBBBBB", *map(int, address.split(":")))
+
+    return b''
