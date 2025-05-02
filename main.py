@@ -15,26 +15,27 @@
 
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor
+from logging import getLogger
 from signal import SIGINT, signal
 from threading import Event
 from time import sleep
 
+from lib.log import configure_logging
 from socks5.tcp import SocksTCPServer, TCPHandler
 from socks5.udp import SocksUDPServer, UDPHandler
-from logger import LogLevel, Logger
 
 
 event = Event()
-logger = Logger(min_level=LogLevel.DEBUG)
+logger = getLogger(__name__)
 
 
 def start_tcp_server(address: str, port: int) -> None:
-    with SocksTCPServer((address, port),TCPHandler, event, logger) as server:
+    with SocksTCPServer((address, port),TCPHandler, event) as server:
         server.serve_forever()
 
 
 def start_udp_server(address: str, port: int) -> None:
-    with SocksUDPServer((address, port),UDPHandler, event, logger) as server:
+    with SocksUDPServer((address, port),UDPHandler, event) as server:
         server.serve_forever()
 
 
@@ -42,8 +43,11 @@ def main() -> None:
     arg_parser = ArgumentParser(description="A simple SOCKS5 server")
     arg_parser.add_argument("--address", default="0.0.0.0", type=str, help="The address to listen on")
     arg_parser.add_argument("--port", "-p", default=1080, type=int, help="The port to listen on")
+    arg_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 
     args = arg_parser.parse_args()
+
+    configure_logging(args.debug)
 
     signal(SIGINT, lambda sig, frame: event.set())
 

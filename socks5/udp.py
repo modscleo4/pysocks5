@@ -13,16 +13,16 @@
 # limitations under the License.
 
 
-from select import select
+from logging import getLogger
 from socket import AF_INET, SOCK_DGRAM, getaddrinfo, socket
 from socketserver import ThreadingUDPServer, BaseRequestHandler
 from struct import pack
 from threading import Event
-from typing import Callable
 
 from socks5 import AddressType, UDPRequest, pack_address, recv_or_none
-from socks5.auth import UsernameAuthRequest, UsernameAuthReply
-from logger import Logger
+
+
+logger = getLogger(__name__)
 
 
 class SocksUDPServer(ThreadingUDPServer):
@@ -31,14 +31,12 @@ class SocksUDPServer(ThreadingUDPServer):
     bnd_addr = pack(">BBBB", 127, 0, 0, 1)
     bnd_port = 1080
     event: Event
-    logger: Logger
 
     def __init__(
         self,
         server_address: tuple[str, int],
         RequestHandlerClass: type[BaseRequestHandler],
         event: Event,
-        logger: Logger,
         bind_and_activate: bool = True,
         *args, **kwargs
     ):
@@ -47,13 +45,12 @@ class SocksUDPServer(ThreadingUDPServer):
         self.bnd_addr = pack_address(self.atyp, server_address[0])
         self.bnd_port = server_address[1]
         self.event = event
-        self.logger = logger
 
-        self.logger.info(f"UDP listening on {self.server_address[0]}:{self.server_address[1]}")
+        logger.info(f"UDP listening on {self.server_address[0]}:{self.server_address[1]}")
 
     def service_actions(self) -> None:
         if self.event.is_set():
-            self.logger.info("Closing UDP server...")
+            logger.info("Closing UDP server...")
             self.server_close()
 
 
@@ -63,8 +60,6 @@ class UDPHandler(BaseRequestHandler):
     request: socket
 
     def handle(self) -> None:
-        logger = self.server.logger
-
         logger.debug(f"Connection from {self.client_address}")
         while True:
             data = recv_or_none(self.request, 4096)
@@ -83,6 +78,6 @@ class UDPHandler(BaseRequestHandler):
                     connection = socket(af, SOCK_DGRAM)
                     connection.sendto(request.data, sa)
                     break
-            except:
-                logger.debug(f"Failed to connect to {request.get_address_str()}:{request.dst_port}")
+            except Exception as ex:
+                logger.exception(f"Failed to connect to {request.get_address_str()}:{request.dst_port}.", exc_info=ex)
                 continue

@@ -13,16 +13,20 @@
 # limitations under the License.
 
 
+from collections.abc import Callable
+from logging import getLogger
 from select import select
 from socket import AF_INET, create_connection, socket, timeout, gaierror
 from socketserver import ThreadingTCPServer, BaseRequestHandler
 from struct import pack
 from threading import Event
-from typing import Callable
 
-from socks5 import AddressType, AuthMethod, Command, ReplyType, VersionIdentifier, MethodSelection, Request, Reply, pack_address, recv_or_none
+from socks5 import AddressType, AuthMethod, Command, ReplyType, VersionIdentifier, MethodSelection, Request, Reply, \
+    pack_address, recv_or_none
 from socks5.auth import UsernameAuthRequest, UsernameAuthReply
-from logger import Logger
+
+logger = getLogger(__name__)
+
 
 class SocksTCPServer(ThreadingTCPServer):
     daemon_threads = True
@@ -30,14 +34,12 @@ class SocksTCPServer(ThreadingTCPServer):
     bnd_addr = pack(">BBBB", 127, 0, 0, 1)
     bnd_port = 1080
     stop_event: Event
-    logger: Logger
 
     def __init__(
         self,
         server_address: tuple[str, int],
         RequestHandlerClass: type[BaseRequestHandler],
         event: Event,
-        logger: Logger,
         bind_and_activate: bool = True,
         *args, **kwargs
     ):
@@ -50,7 +52,6 @@ class SocksTCPServer(ThreadingTCPServer):
 
         self.logger.info(f"TCP listening on {self.server_address[0]}:{self.server_address[1]}")
 
-
     def service_actions(self) -> None:
         if self.stop_event.is_set():
             self.logger.info("Closing TCP server...")
@@ -62,10 +63,7 @@ class TCPHandler(BaseRequestHandler):
     client_address: tuple[str, int]
     request: socket
 
-
     def handle(self) -> None:
-        logger = self.server.logger
-
         logger.debug(f"Connection from {self.client_address}")
         data = recv_or_none(self.request, 257)
         if not data:
@@ -93,10 +91,10 @@ class TCPHandler(BaseRequestHandler):
             if not data:
                 return
 
-            authRequest = UsernameAuthRequest.from_bytes(data)
-            logger.debug(f"{authRequest=}")
+            auth_request = UsernameAuthRequest.from_bytes(data)
+            logger.debug(f"{auth_request=}")
 
-            if authRequest.uname == "admin" and authRequest.passwd == "admin":
+            if auth_request.uname == "admin" and auth_request.passwd == "admin":
                 self.request.send(UsernameAuthReply(1, 0).to_bytes())
             else:
                 self.request.send(UsernameAuthReply(1, 1).to_bytes())
@@ -130,8 +128,8 @@ class TCPHandler(BaseRequestHandler):
                 logger.debug(f"Connection to {request.get_address_str()}:{request.dst_port} timed out")
                 self.request.send(Reply(5, ReplyType.TTL_EXPIRED, 0, self.server.atyp, self.server.bnd_addr, self.server.bnd_port).to_bytes())
                 return
-            except Exception as e:
-                logger.debug(f"Failed to connect to {request.get_address_str()}:{request.dst_port}")
+            except Exception as ex:
+                logger.debug(f"Failed to connect to {request.get_address_str()}:{request.dst_port}", exc_info=ex)
                 self.request.send(Reply(5, ReplyType.CONNECTION_REFUSED, 0, self.server.atyp, self.server.bnd_addr, self.server.bnd_port).to_bytes())
                 return
         elif request.cmd == Command.BIND:
@@ -149,8 +147,8 @@ class TCPHandler(BaseRequestHandler):
                 logger.debug(f"Connection to {request.get_address_str()}:{request.dst_port} timed out")
                 self.request.send(Reply(5, ReplyType.TTL_EXPIRED, 0, self.server.atyp, self.server.bnd_addr, self.server.bnd_port).to_bytes())
                 return
-            except Exception as e:
-                logger.debug(f"Failed to connect to {request.get_address_str()}:{request.dst_port}")
+            except Exception as ex:
+                logger.debug(f"Failed to connect to {request.get_address_str()}:{request.dst_port}", exc_info=ex)
                 self.request.send(Reply(5, ReplyType.CONNECTION_REFUSED, 0, self.server.atyp, self.server.bnd_addr, self.server.bnd_port).to_bytes())
                 return
         elif request.cmd == Command.UDP_ASSOCIATE:
@@ -163,16 +161,17 @@ class TCPHandler(BaseRequestHandler):
 
         self.wait_for_data(self.request, connection, encrypt, decrypt)
 
-
     def finish(self) -> None:
-        logger = self.server.logger
-
         logger.debug(f"Connection from {self.client_address} closed")
         return super().finish()
 
-
     @staticmethod
-    def wait_for_data(client: socket, server: socket, encrypt: Callable[[bytes], bytes], decrypt: Callable[[bytes], bytes]) -> None:
+    def wait_for_data(
+        client: socket,
+        server: socket,
+        encrypt: Callable[[bytes], bytes],
+        decrypt: Callable[[bytes], bytes],
+    ) -> None:
         while True:
             rlist, _, _ = select([client, server], [], [])
 
@@ -185,5 +184,6 @@ class TCPHandler(BaseRequestHandler):
                     data = server.recv(4096)
                     if client.send(data) <= 0:
                         break
-            except:
+            except Exception as ex:
+                logger.exception(f"Failed to receive data from {client}.", exc_info=ex)
                 break

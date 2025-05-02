@@ -1,4 +1,5 @@
-FROM python:3.12
+FROM python:3.13
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Set the working directory
 WORKDIR /app
@@ -6,8 +7,8 @@ WORKDIR /app
 # Copy the current directory contents into the container at /app
 COPY . .
 
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Install any needed packages specified in pyproject.toml
+RUN uv sync --frozen
 
 # Run main.py when the container launches
-ENTRYPOINT ["python", "main.py"]
+ENTRYPOINT ["uv", "run", "main.py"]
